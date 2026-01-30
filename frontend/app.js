@@ -1,20 +1,26 @@
-// RAG Document Manager Frontend
+// Straight Retrieve Frontend
 
 const API_BASE = '/api';
+const CHUNKS_PER_PAGE = 25;
 
 // DOM Elements
+const tabs = document.querySelectorAll('.tab');
+const tabContents = document.querySelectorAll('.tab-content');
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const uploadForm = document.getElementById('upload-form');
 const uploadBtn = document.getElementById('upload-btn');
 const hierarchicalSplit = document.getElementById('hierarchical-split');
 const uploadStatus = document.getElementById('upload-status');
+const documentsCount = document.getElementById('documents-count');
 const documentsList = document.getElementById('documents-list');
 const refreshBtn = document.getElementById('refresh-btn');
-const detailSection = document.getElementById('detail-section');
-const closeDetailBtn = document.getElementById('close-detail-btn');
+const detailModal = document.getElementById('detail-modal');
+const modalTitle = document.getElementById('modal-title');
+const closeModalBtn = document.getElementById('close-modal-btn');
 const documentInfo = document.getElementById('document-info');
 const chunksList = document.getElementById('chunks-list');
+const chunksPagination = document.getElementById('chunks-pagination');
 const searchForm = document.getElementById('search-form');
 const searchQuery = document.getElementById('search-query');
 const searchLimit = document.getElementById('search-limit');
@@ -23,7 +29,26 @@ const searchDocument = document.getElementById('search-document');
 const searchStatus = document.getElementById('search-status');
 const searchResults = document.getElementById('search-results');
 
-let selectedFile = null;
+let selectedFiles = [];
+let currentChunks = [];
+let currentChunkPage = 0;
+
+// Tab Handling
+tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+        const tabId = tab.dataset.tab;
+
+        tabs.forEach(t => t.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+
+        tab.classList.add('active');
+        document.getElementById(`tab-${tabId}`).classList.add('active');
+
+        if (tabId === 'documents') {
+            loadDocuments();
+        }
+    });
+});
 
 // File Upload Handling
 dropZone.addEventListener('click', () => fileInput.click());
@@ -40,55 +65,76 @@ dropZone.addEventListener('dragleave', () => {
 dropZone.addEventListener('drop', (e) => {
     e.preventDefault();
     dropZone.classList.remove('drag-over');
-    const files = e.dataTransfer.files;
+    const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
-        handleFileSelect(files[0]);
+        handleFileSelect(files);
     }
 });
 
 fileInput.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-        handleFileSelect(e.target.files[0]);
+    const files = Array.from(e.target.files);
+    if (files.length > 0) {
+        handleFileSelect(files);
     }
 });
 
-function handleFileSelect(file) {
-    selectedFile = file;
+function handleFileSelect(files) {
+    selectedFiles = files;
     dropZone.classList.add('has-file');
-    dropZone.querySelector('p').textContent = `Selected: ${file.name}`;
+    if (files.length === 1) {
+        dropZone.querySelector('p').textContent = `Selected: ${files[0].name}`;
+    } else {
+        dropZone.querySelector('p').textContent = `Selected: ${files.length} files`;
+    }
     uploadBtn.disabled = false;
 }
 
 uploadForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!selectedFile) return;
+    if (selectedFiles.length === 0) return;
 
-    setUploadStatus('loading', 'Uploading and processing...');
     uploadBtn.disabled = true;
+    const totalFiles = selectedFiles.length;
+    let successCount = 0;
+    let errorCount = 0;
 
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('hierarchical_split', hierarchicalSplit.checked);
+    for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        setUploadStatus('loading', `Processing ${i + 1}/${totalFiles}: ${file.name}...`);
 
-    try {
-        const response = await fetch(`${API_BASE}/upload`, {
-            method: 'POST',
-            body: formData,
-        });
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('hierarchical_split', hierarchicalSplit.checked);
 
-        const data = await response.json();
+        try {
+            const response = await fetch(`${API_BASE}/upload`, {
+                method: 'POST',
+                body: formData,
+            });
 
-        if (response.ok) {
-            setUploadStatus('success', `${data.message}`);
-            resetUploadForm();
-            loadDocuments();
-        } else {
-            setUploadStatus('error', `Error: ${data.detail || 'Upload failed'}`);
+            const data = await response.json();
+
+            if (response.ok) {
+                successCount++;
+            } else {
+                errorCount++;
+                console.error(`Error uploading ${file.name}:`, data.detail);
+            }
+        } catch (error) {
+            errorCount++;
+            console.error(`Error uploading ${file.name}:`, error.message);
         }
-    } catch (error) {
-        setUploadStatus('error', `Error: ${error.message}`);
     }
 
+    if (errorCount === 0) {
+        setUploadStatus('success', `Uploaded ${successCount} file(s) successfully`);
+    } else if (successCount === 0) {
+        setUploadStatus('error', `Failed to upload all ${errorCount} file(s)`);
+    } else {
+        setUploadStatus('loading', `Uploaded ${successCount}, failed ${errorCount}`);
+    }
+
+    resetUploadForm();
     uploadBtn.disabled = false;
 });
 
@@ -98,16 +144,17 @@ function setUploadStatus(type, message) {
 }
 
 function resetUploadForm() {
-    selectedFile = null;
+    selectedFiles = [];
     fileInput.value = '';
     dropZone.classList.remove('has-file');
-    dropZone.querySelector('p').textContent = 'Drag & drop a file here or click to select';
+    dropZone.querySelector('p').textContent = 'Drag & drop files here or click to select';
     uploadBtn.disabled = true;
 }
 
 // Documents List
 async function loadDocuments() {
-    documentsList.innerHTML = '<p class="loading">Loading documents...</p>';
+    documentsList.innerHTML = '<p class="loading">Loading...</p>';
+    documentsCount.textContent = '';
 
     try {
         const response = await fetch(`${API_BASE}/documents`);
@@ -115,9 +162,11 @@ async function loadDocuments() {
 
         if (data.documents.length === 0) {
             documentsList.innerHTML = '<p class="empty">No documents uploaded yet.</p>';
+            documentsCount.textContent = '0 documents';
             return;
         }
 
+        documentsCount.textContent = `${data.documents.length} document(s)`;
         documentsList.innerHTML = data.documents.map(doc => `
             <div class="document-item" data-id="${doc.id}">
                 <div class="document-info-brief">
@@ -133,46 +182,100 @@ async function loadDocuments() {
             </div>
         `).join('');
     } catch (error) {
-        documentsList.innerHTML = `<p class="error">Error loading documents: ${error.message}</p>`;
+        documentsList.innerHTML = `<p class="error">Error: ${error.message}</p>`;
     }
 }
 
 async function viewDocument(docId) {
-    detailSection.style.display = 'block';
+    detailModal.classList.add('active');
     documentInfo.innerHTML = '<p class="loading">Loading...</p>';
     chunksList.innerHTML = '';
+    chunksPagination.innerHTML = '';
 
     try {
         const response = await fetch(`${API_BASE}/documents/${docId}`);
         const data = await response.json();
         const doc = data.document;
 
+        modalTitle.textContent = doc.filename;
         documentInfo.innerHTML = `
-            <p><strong>Filename:</strong> ${escapeHtml(doc.filename)}</p>
             <p><strong>Type:</strong> ${doc.content_type || 'Unknown'}</p>
             <p><strong>Chunks:</strong> ${doc.chunk_count}</p>
             <p><strong>Uploaded:</strong> ${formatDate(doc.created_at)}</p>
             <p><strong>ID:</strong> <code>${doc.id}</code></p>
         `;
 
-        chunksList.innerHTML = data.chunks.map((chunk, index) => `
-            <div class="chunk-item">
-                <div class="chunk-header">
-                    <span class="chunk-index">Chunk #${chunk.chunk_index !== null ? chunk.chunk_index : index}</span>
-                    <span class="chunk-path">${escapeHtml(chunk.section_path) || 'No section'}</span>
-                </div>
-                <div class="chunk-content">${escapeHtml(chunk.content)}</div>
-            </div>
-        `).join('');
-
-        detailSection.scrollIntoView({ behavior: 'smooth' });
+        currentChunks = data.chunks;
+        currentChunkPage = 0;
+        renderChunksPage();
+        renderChunksPagination();
     } catch (error) {
-        documentInfo.innerHTML = `<p class="error">Error loading document: ${error.message}</p>`;
+        documentInfo.innerHTML = `<p class="error">Error: ${error.message}</p>`;
     }
 }
 
+function closeModal() {
+    detailModal.classList.remove('active');
+}
+
+closeModalBtn.addEventListener('click', closeModal);
+detailModal.addEventListener('click', (e) => {
+    if (e.target === detailModal) {
+        closeModal();
+    }
+});
+
+function renderChunksPage() {
+    const start = currentChunkPage * CHUNKS_PER_PAGE;
+    const end = start + CHUNKS_PER_PAGE;
+    const pageChunks = currentChunks.slice(start, end);
+
+    chunksList.innerHTML = pageChunks.map((chunk, index) => `
+        <div class="chunk-item">
+            <div class="chunk-header">
+                <span class="chunk-index">Chunk #${chunk.chunk_index !== null ? chunk.chunk_index : start + index}</span>
+                <span class="chunk-path">${escapeHtml(chunk.section_path) || 'No section'}</span>
+            </div>
+            <div class="chunk-content">${escapeHtml(chunk.content)}</div>
+        </div>
+    `).join('');
+}
+
+function renderChunksPagination() {
+    const totalPages = Math.ceil(currentChunks.length / CHUNKS_PER_PAGE);
+
+    if (totalPages <= 1) {
+        chunksPagination.innerHTML = '';
+        return;
+    }
+
+    let paginationHtml = '<div class="pagination">';
+    paginationHtml += `<button class="pagination-btn" onclick="goToChunkPage(${currentChunkPage - 1})" ${currentChunkPage === 0 ? 'disabled' : ''}>&lt;</button>`;
+
+    for (let i = 0; i < totalPages; i++) {
+        if (i === 0 || i === totalPages - 1 || (i >= currentChunkPage - 2 && i <= currentChunkPage + 2)) {
+            paginationHtml += `<button class="pagination-btn ${i === currentChunkPage ? 'active' : ''}" onclick="goToChunkPage(${i})">${i + 1}</button>`;
+        } else if (i === currentChunkPage - 3 || i === currentChunkPage + 3) {
+            paginationHtml += '<span class="pagination-ellipsis">...</span>';
+        }
+    }
+
+    paginationHtml += `<button class="pagination-btn" onclick="goToChunkPage(${currentChunkPage + 1})" ${currentChunkPage === totalPages - 1 ? 'disabled' : ''}>&gt;</button>`;
+    paginationHtml += '</div>';
+    chunksPagination.innerHTML = paginationHtml;
+}
+
+function goToChunkPage(page) {
+    const totalPages = Math.ceil(currentChunks.length / CHUNKS_PER_PAGE);
+    if (page < 0 || page >= totalPages) return;
+
+    currentChunkPage = page;
+    renderChunksPage();
+    renderChunksPagination();
+}
+
 async function deleteDocument(docId) {
-    if (!confirm('Are you sure you want to delete this document?')) return;
+    if (!confirm('Delete this document?')) return;
 
     try {
         const response = await fetch(`${API_BASE}/documents/${docId}`, {
@@ -181,9 +284,7 @@ async function deleteDocument(docId) {
 
         if (response.ok) {
             loadDocuments();
-            if (detailSection.style.display !== 'none') {
-                detailSection.style.display = 'none';
-            }
+            closeModal();
         } else {
             const data = await response.json();
             alert(`Error: ${data.detail || 'Delete failed'}`);
@@ -209,9 +310,6 @@ function formatDate(dateStr) {
 
 // Event Listeners
 refreshBtn.addEventListener('click', loadDocuments);
-closeDetailBtn.addEventListener('click', () => {
-    detailSection.style.display = 'none';
-});
 
 // Search Handling
 searchForm.addEventListener('submit', async (e) => {
@@ -229,7 +327,6 @@ searchForm.addEventListener('submit', async (e) => {
         offset: parseInt(searchOffset.value) || 0,
     };
 
-    // Add document filter if specified
     const docId = searchDocument.value.trim();
     if (docId) {
         requestBody.filter = { document_id: docId };
@@ -271,16 +368,25 @@ function displaySearchResults(results) {
             <div class="result-header">
                 <span class="result-index">#${index + 1}</span>
                 <span class="result-filename">${escapeHtml(result.document_filename)}</span>
-                <span class="result-path">${escapeHtml(result.section_path) || 'No section'}</span>
+                <span class="result-path">${escapeHtml(result.section_path) || ''}</span>
             </div>
             <div class="result-content">${escapeHtml(result.content)}</div>
             <div class="result-meta">
                 <span>Chunk: ${result.chunk_id}</span>
-                <span>Doc ID: <code>${result.document_id}</code></span>
+                <span>Doc: <code>${result.document_id}</code></span>
             </div>
         </div>
     `).join('');
 }
 
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeModal();
+    }
+});
+
 // Initial Load
-document.addEventListener('DOMContentLoaded', loadDocuments);
+document.addEventListener('DOMContentLoaded', () => {
+    // Documents will load when tab is clicked
+});
