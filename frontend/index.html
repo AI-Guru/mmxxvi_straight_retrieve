@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Document Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RAG Document Manager</h1>
+            <p class="subtitle">Upload, manage, and explore documents</p>
+        </header>
+
+        <main>
+            <!-- Upload Section -->
+            <section class="card upload-section">
+                <h2>Upload Document</h2>
+                <form id="upload-form">
+                    <div class="drop-zone" id="drop-zone">
+                        <p>Drag & drop a file here or click to select</p>
+                        <input type="file" id="file-input" accept=".pdf,.epub,.docx,.md,.txt">
+                    </div>
+                    <div class="upload-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="hierarchical-split" checked>
+                            Hierarchical splitting (by markdown headers)
+                        </label>
+                    </div>
+                    <button type="submit" id="upload-btn" disabled>Upload</button>
+                </form>
+                <div id="upload-status" class="status"></div>
+            </section>
+
+            <!-- Search Section -->
+            <section class="card search-section">
+                <h2>Search Documents</h2>
+                <form id="search-form">
+                    <div class="search-input-row">
+                        <input type="text" id="search-query" placeholder="Enter search query..." required>
+                        <button type="submit" id="search-btn">Search</button>
+                    </div>
+                    <div class="search-options">
+                        <div class="option-group">
+                            <label for="search-limit">Limit:</label>
+                            <input type="number" id="search-limit" value="10" min="1" max="100">
+                        </div>
+                        <div class="option-group">
+                            <label for="search-offset">Offset:</label>
+                            <input type="number" id="search-offset" value="0" min="0">
+                        </div>
+                        <div class="option-group">
+                            <label for="search-document">Document ID (optional):</label>
+                            <input type="text" id="search-document" placeholder="Filter by document...">
+                        </div>
+                    </div>
+                </form>
+                <div id="search-status" class="status"></div>
+                <div id="search-results" class="search-results"></div>
+            </section>
+
+            <!-- Documents Section -->
+            <section class="card documents-section">
+                <h2>Documents</h2>
+                <button id="refresh-btn" class="secondary-btn">Refresh</button>
+                <div id="documents-list" class="documents-list">
+                    <p class="loading">Loading documents...</p>
+                </div>
+            </section>
+
+            <!-- Document Detail Section -->
+            <section class="card detail-section" id="detail-section" style="display: none;">
+                <h2>Document Details</h2>
+                <button id="close-detail-btn" class="secondary-btn">Close</button>
+                <div id="document-detail">
+                    <div class="document-info" id="document-info"></div>
+                    <h3>Chunks</h3>
+                    <div class="chunks-list" id="chunks-list"></div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>RAG Document Manager v1.0.0 | MCP Server: <code>http://localhost:9803</code></p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

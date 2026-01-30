@@ -1,0 +1,80 @@
+name: mmxxvi-rag
+
+services:
+  # PostgreSQL with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: mmxxvi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpassword}
+      POSTGRES_USER: ${POSTGRES_USER:-raguser}
+      POSTGRES_DB: ${POSTGRES_DB:-ragdb}
+    ports:
+      - "9802:5432"
+    volumes:
+      - ./init/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-raguser} -d ${POSTGRES_DB:-ragdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Application
+  api:
+    build:
+      context: ./api
+    container_name: mmxxvi-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-raguser}:${POSTGRES_PASSWORD:-ragpassword}@postgres:5432/${POSTGRES_DB:-ragdb}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-qwen3-embedding:0.6b}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
+    ports:
+      - "9801:8000"
+    volumes:
+      - ./frontend:/app/static
+    networks:
+      - rag-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # MCP Server (uses LangGraph store directly)
+  mcp:
+    build:
+      context: ./mcp
+    container_name: mmxxvi-mcp
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-raguser}:${POSTGRES_PASSWORD:-ragpassword}@postgres:5432/${POSTGRES_DB:-ragdb}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-qwen3-embedding:0.6b}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
+    ports:
+      - "9803:8000"
+    networks:
+      - rag-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  rag-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local
