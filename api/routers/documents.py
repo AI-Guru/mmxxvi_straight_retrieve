@@ -19,33 +19,42 @@ router = APIRouter(prefix="/api/documents", tags=["documents"])
 async def list_documents(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    search: str = Query(default="", description="Filter by filename (case-insensitive)"),
 ):
-    """List all documents with pagination."""
+    """List all documents with pagination and optional search."""
     store = await get_store()
 
-    # Search documents namespace (no query = list all)
-    results = await store.asearch(
+    # Fetch all documents (store doesn't support text filtering)
+    all_results = await store.asearch(
         DOCUMENTS_NAMESPACE,
         query=None,
-        limit=limit,
-        offset=skip,
+        limit=10000,
     )
 
-    documents = []
-    for item in results:
+    # Filter by search term if provided
+    search_lower = search.lower().strip()
+    filtered = []
+    for item in all_results:
         doc_data = item.value
+        filename = doc_data.get("filename", "unknown")
+        if not search_lower or search_lower in filename.lower():
+            filtered.append((item, doc_data, filename))
+
+    total = len(filtered)
+
+    # Apply pagination
+    paginated = filtered[skip:skip + limit]
+
+    documents = []
+    for item, doc_data, filename in paginated:
         documents.append(DocumentResponse(
             id=item.key,
-            filename=doc_data.get("filename", "unknown"),
+            filename=filename,
             content_type=doc_data.get("content_type"),
             metadata={"hierarchical_split": doc_data.get("hierarchical_split", True)},
             created_at=doc_data.get("created_at"),
             chunk_count=doc_data.get("chunk_count", 0),
         ))
-
-    # Get total count (approximate - search all with high limit)
-    all_docs = await store.asearch(DOCUMENTS_NAMESPACE, query=None, limit=10000)
-    total = len(all_docs)
 
     return DocumentListResponse(
         documents=documents,

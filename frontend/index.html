@@ -70,12 +70,14 @@
             <section class="tab-content" id="tab-documents">
                 <div class="card">
                     <div class="card-header">
+                        <input type="text" id="documents-search" placeholder="Search documents..." class="search-input">
                         <span id="documents-count"></span>
                         <button id="refresh-btn" class="secondary-btn">Refresh</button>
                     </div>
                     <div id="documents-list" class="documents-list">
                         <p class="loading">Loading documents...</p>
                     </div>
+                    <div class="pagination" id="documents-pagination"></div>
                 </div>
             </section>
         </main>

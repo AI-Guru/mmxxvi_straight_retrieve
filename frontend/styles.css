@@ -123,6 +123,12 @@ main {
     margin-bottom: 1rem;
     color: var(--text-muted);
     font-size: 0.8rem;
+    gap: 1rem;
+}
+
+.card-header .search-input {
+    flex: 1;
+    max-width: 250px;
 }
 
 /* Upload Section */
@@ -377,8 +383,12 @@ input[type="number"]:focus {
 
 /* Documents List */
 .documents-list {
-    max-height: 60vh;
+    max-height: 50vh;
     overflow-y: auto;
+}
+
+#documents-pagination {
+    margin-top: 1rem;
 }
 
 .document-item {

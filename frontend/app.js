@@ -28,10 +28,18 @@ const searchOffset = document.getElementById('search-offset');
 const searchDocument = document.getElementById('search-document');
 const searchStatus = document.getElementById('search-status');
 const searchResults = document.getElementById('search-results');
+const documentsSearch = document.getElementById('documents-search');
+const documentsPagination = document.getElementById('documents-pagination');
 
 let selectedFiles = [];
 let currentChunks = [];
 let currentChunkPage = 0;
+
+// Documents pagination state
+const DOCS_PER_PAGE = 10;
+let documentsPage = 0;
+let documentsTotal = 0;
+let documentsSearchTerm = '';
 
 // Tab Handling
 tabs.forEach(tab => {
@@ -152,21 +160,42 @@ function resetUploadForm() {
 }
 
 // Documents List
-async function loadDocuments() {
+async function loadDocuments(resetPage = false) {
+    if (resetPage) {
+        documentsPage = 0;
+    }
+
     documentsList.innerHTML = '<p class="loading">Loading...</p>';
+    documentsPagination.innerHTML = '';
     documentsCount.textContent = '';
 
+    const skip = documentsPage * DOCS_PER_PAGE;
+    const params = new URLSearchParams({
+        skip: skip,
+        limit: DOCS_PER_PAGE,
+    });
+    if (documentsSearchTerm) {
+        params.append('search', documentsSearchTerm);
+    }
+
     try {
-        const response = await fetch(`${API_BASE}/documents`);
+        const response = await fetch(`${API_BASE}/documents?${params}`);
         const data = await response.json();
 
-        if (data.documents.length === 0) {
-            documentsList.innerHTML = '<p class="empty">No documents uploaded yet.</p>';
+        documentsTotal = data.total;
+
+        if (data.total === 0) {
+            documentsList.innerHTML = documentsSearchTerm
+                ? '<p class="empty">No documents match your search.</p>'
+                : '<p class="empty">No documents uploaded yet.</p>';
             documentsCount.textContent = '0 documents';
             return;
         }
 
-        documentsCount.textContent = `${data.documents.length} document(s)`;
+        const start = skip + 1;
+        const end = Math.min(skip + data.documents.length, data.total);
+        documentsCount.textContent = `${start}-${end} of ${data.total}`;
+
         documentsList.innerHTML = data.documents.map(doc => `
             <div class="document-item" data-id="${doc.id}">
                 <div class="document-info-brief">
@@ -181,9 +210,42 @@ async function loadDocuments() {
                 </div>
             </div>
         `).join('');
+
+        renderDocumentsPagination();
     } catch (error) {
         documentsList.innerHTML = `<p class="error">Error: ${error.message}</p>`;
     }
+}
+
+function renderDocumentsPagination() {
+    const totalPages = Math.ceil(documentsTotal / DOCS_PER_PAGE);
+
+    if (totalPages <= 1) {
+        documentsPagination.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+    html += `<button class="pagination-btn" onclick="goToDocumentsPage(${documentsPage - 1})" ${documentsPage === 0 ? 'disabled' : ''}>&lt;</button>`;
+
+    for (let i = 0; i < totalPages; i++) {
+        if (i === 0 || i === totalPages - 1 || (i >= documentsPage - 2 && i <= documentsPage + 2)) {
+            html += `<button class="pagination-btn ${i === documentsPage ? 'active' : ''}" onclick="goToDocumentsPage(${i})">${i + 1}</button>`;
+        } else if (i === documentsPage - 3 || i === documentsPage + 3) {
+            html += '<span class="pagination-ellipsis">...</span>';
+        }
+    }
+
+    html += `<button class="pagination-btn" onclick="goToDocumentsPage(${documentsPage + 1})" ${documentsPage === totalPages - 1 ? 'disabled' : ''}>&gt;</button>`;
+    documentsPagination.innerHTML = html;
+}
+
+function goToDocumentsPage(page) {
+    const totalPages = Math.ceil(documentsTotal / DOCS_PER_PAGE);
+    if (page < 0 || page >= totalPages) return;
+
+    documentsPage = page;
+    loadDocuments();
 }
 
 async function viewDocument(docId) {
@@ -309,7 +371,17 @@ function formatDate(dateStr) {
 }
 
 // Event Listeners
-refreshBtn.addEventListener('click', loadDocuments);
+refreshBtn.addEventListener('click', () => loadDocuments(true));
+
+// Documents search with debounce
+let searchTimeout = null;
+documentsSearch.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        documentsSearchTerm = e.target.value.trim();
+        loadDocuments(true);
+    }, 300);
+});
 
 // Search Handling
 searchForm.addEventListener('submit', async (e) => {
